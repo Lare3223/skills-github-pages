@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Salary Calculator</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h2 {
+            color: #0056b3;
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin: 10px 0 5px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        input[type='range'] {
+            width: 300px;
+            height: 15px;
+            margin-bottom: 15px;
+            background: #d3d3d3;
+            outline: none;
+            -webkit-appearance: none;
+            border-radius: 5px;
+        }
+
+        input[type='range']::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #007bff;
+            cursor: pointer;
+            border-radius: 50%;
+            border: none;
+        }
+
+        input[type='range']::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #007bff;
+            cursor: pointer;
+            border-radius: 50%;
+            border: none;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            margin: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        #output, #liveTimer {
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #008000;
+        }
+
+        canvas {
+            max-width: 800px;
+            margin: 20px auto;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <h2>Daily Salary Calculator</h2>
+    <label>Hourly Wage: €<span id="hourlyWageValue">10.0</span></label>
+    <input type="range" id="hourlyWage" min="1" max="100" step="0.1" value="10" oninput="updateValue('hourlyWage', true)">
+    <br>
+    <label>Adjust Wage (%): <span id="wageChangeValue">0%</span></label>
+    <input type="range" id="wageChange" min="0" max="300" step="1" value="0" oninput="updateWage(true)">
+    <br>
+    <label>Total Work Time: <span id="totalWorkHoursValue">8h 0m</span></label>
+    <input type="range" id="totalWorkHours" min="60" max="1440" step="15" value="480" oninput="updateValue('totalWorkHours', false)">
+    <br>
+    <label>Already Worked: <span id="alreadyWorkedValue">0h 0m</span></label>
+    <input type="range" id="alreadyWorked" min="0" max="480" step="15" value="0" oninput="updateValue('alreadyWorked', false)">
+    <br>
+    <button onclick="calculateSalary()">Start Timer</button>
+    <button onclick="stopTimer()">Stop Timer</button>
+    <div id="output"></div>
+    <div id="liveTimer"></div>
+    <canvas id="wageChart"></canvas>
+
+    <script>
+        let totalEarnings = 0;
+        let interval;
+        let startTime;
+        let alreadyEarned = 0;
+        let baseHourlyWage = 10;
+        let wageMultiplier = 1;
+        let wageChart;
+        let wageData = [];
+        let timeLabels = [];
+        let totalSalary = 0;
+        let secondsWorked = 0;
+
+        function updateValue(id, isDecimal) {
+            let value = document.getElementById(id).value;
+            if (isDecimal) {
+                document.getElementById(id + 'Value').innerText = parseFloat(value).toFixed(1);
+                baseHourlyWage = parseFloat(value);
+            } else {
+                let hours = Math.floor(value / 60);
+                let minutes = value % 60;
+                document.getElementById(id + 'Value').innerText = `${hours}h ${minutes}m`;
+            }
+        }
+
+        function updateWage(updateSalary = false) {
+            let changePercentage = parseInt(document.getElementById('wageChange').value);
+            document.getElementById('wageChangeValue').innerText = `${changePercentage}%`;
+            wageMultiplier = 1 + changePercentage / 100;
+            if (updateSalary) {
+                updateTotalSalary();
+            }
+        }
+
+        function updateTotalSalary() {
+            let totalWorkMinutes = parseInt(document.getElementById('totalWorkHours').value);
+            totalSalary = (baseHourlyWage * wageMultiplier) * (totalWorkMinutes / 60);
+            document.getElementById('output').innerHTML = `Total Salary for the Day: €${totalSalary.toFixed(2)}`;
+        }
+
+        function calculateSalary() {
+            if (interval) {
+                clearInterval(interval);
+                interval = null;
+            }
+
+            totalEarnings = 0;
+            secondsWorked = 0;
+
+            let totalWorkMinutes = parseInt(document.getElementById('totalWorkHours').value);
+            let alreadyWorkedMinutes = parseInt(document.getElementById('alreadyWorked').value);
+
+            if (alreadyWorkedMinutes >= totalWorkMinutes) {
+                alert('Already worked time cannot be greater than or equal to total work time.');
+                return;
+            }
+
+            updateTotalSalary();
+            alreadyEarned = (baseHourlyWage * wageMultiplier) * (alreadyWorkedMinutes / 60);
+
+            let remainingMinutes = totalWorkMinutes - alreadyWorkedMinutes;
+            totalEarnings = alreadyEarned;
+            startTime = new Date();
+
+            if (wageChart) wageChart.destroy();
+            wageData = [];
+            timeLabels = [];
+
+            const ctx = document.getElementById('wageChart').getContext('2d');
+            wageChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: [{
+                        label: 'Hourly Wage (€)',
+                        data: wageData,
+                        borderColor: 'blue',
+                        borderWidth: 2,
+                        fill: false
+                    }]
+                },
+                options: {
+                    scales: {
+                        x: { title: { display: true, text: 'Time (s)' } },
+                        y: { title: { display: true, text: 'Hourly Wage (€)' }, min: 0 }
+                    }
+                }
+            });
+
+            interval = setInterval(() => {
+                if (secondsWorked >= remainingMinutes * 60) {
+                    stopTimer();
+                    return;
+                }
+                secondsWorked++;
+                let adjustedHourlyWage = baseHourlyWage * wageMultiplier;
+                totalEarnings += adjustedHourlyWage / 3600;
+                let elapsedTime = Math.floor((new Date() - startTime) / 1000) + alreadyWorkedMinutes * 60;
+                let hours = Math.floor(elapsedTime / 3600);
+                let minutes = Math.floor((elapsedTime % 3600) / 60);
+                let seconds = elapsedTime % 60;
+                document.getElementById('liveTimer').innerHTML = `Time: ${hours}h ${minutes}m ${seconds}s | Earnings: €${totalEarnings.toFixed(2)}`;
+
+                timeLabels.push(secondsWorked);
+                wageData.push(adjustedHourlyWage);
+                wageChart.update();
+
+                updateTotalSalary();
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if (interval) {
+                clearInterval(interval);
+                interval = null;
+
+                let totalWorkMinutes = parseInt(document.getElementById('totalWorkHours').value);
+                let alreadyWorkedMinutes = parseInt(document.getElementById('alreadyWorked').value);
+                let totalMinutesWorked = Math.min(secondsWorked / 60 + alreadyWorkedMinutes, totalWorkMinutes);
+
+                let hours = Math.floor(totalMinutesWorked / 60);
+                let minutes = Math.floor(totalMinutesWorked % 60);
+                let seconds = Math.round((totalMinutesWorked % 1) * 60);
+
+                document.getElementById('liveTimer').innerHTML = `
+                    Timer Stopped<br>
+                    Total Time Worked: ${hours}h ${minutes}m ${seconds}s<br>
+                    Total Earnings: €${totalEarnings.toFixed(2)}
+                `;
+
+                timeLabels.push(secondsWorked);
+                wageData.push(baseHourlyWage * wageMultiplier);
+                wageChart.update();
+            }
+        }
+    </script>
+</body>
+</html>
+
+
